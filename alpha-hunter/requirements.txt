@@ -1,0 +1,4 @@
+httpx>=0.27
+websockets>=13.0
+apscheduler>=3.10
+redis[hiredis]>=5.0
