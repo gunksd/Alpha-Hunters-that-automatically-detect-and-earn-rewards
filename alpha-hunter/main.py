@@ -23,6 +23,9 @@ from analysis.oi_price_divergence import check_oi_price_divergence
 from analysis.long_short_monitor import check_long_short_anomaly
 from analysis.squeeze_detector import check_squeeze
 from analysis.phase_detector import detect_phase
+from analysis.gainer_monitor import check_gainer_anomaly
+from analysis.pre_squeeze import check_pre_squeeze
+from analysis.symbol_ranker import rank_symbols
 from alert.wecom import send_alert
 
 CST = timezone(timedelta(hours=8))
@@ -43,6 +46,8 @@ async def refresh_watchlist():
     alpha_tokens = await fetch_alpha_tokens()
     futures_symbols = await fetch_futures_symbols()
     watched_symbols = cross_filter(alpha_tokens, futures_symbols)
+    # 标的池排序：新币和大波动币优先
+    watched_symbols = await rank_symbols(watched_symbols)
     watched_set = set(watched_symbols)
     last_alpha_refresh = asyncio.get_event_loop().time()
     logger.info("当前监控 %d 个币种: %s", len(watched_symbols), ", ".join(watched_symbols[:20]))
@@ -53,6 +58,13 @@ async def refresh_watchlist():
 async def run_monitors():
     """运行所有异动检测，收集告警"""
     all_alerts = []
+
+    # 第零批：涨幅榜异动（优先级最高，只调一次 ticker）
+    try:
+        gainer_alerts = await check_gainer_anomaly(watched_symbols)
+        all_alerts.extend(gainer_alerts)
+    except Exception as e:
+        logger.error("涨幅榜检测异常: %s", e)
 
     # 第一批：不调 klines 的模块可以并行
     batch1 = await asyncio.gather(
@@ -80,6 +92,7 @@ async def run_monitors():
     batch3 = await asyncio.gather(
         check_oi_price_divergence(watched_symbols),
         check_squeeze(watched_symbols),
+        check_pre_squeeze(watched_symbols),
         return_exceptions=True,
     )
     for r in batch3:
@@ -136,10 +149,11 @@ async def poll_loop():
 async def main():
     """启动主循环和 WebSocket 监听"""
     logger.info("=" * 50)
-    logger.info("Alpha Hunter 启动 (增强版)")
-    logger.info("轮询间隔: %ds | OI阈值: %.0f%% | 量比: %.1fx",
-                config.POLL_INTERVAL, config.OI_CHANGE_THRESHOLD * 100, config.VOLUME_SPIKE_MULTIPLIER)
-    logger.info("新增模块: OI-价格联动 | 多空比 | 挤压检测 | 阶段判断")
+    logger.info("Alpha Hunter 启动 (v2)")
+    logger.info("轮询间隔: %ds | OI阈值: %.0f%% | 量比: %.1fx | 涨幅榜: >%.0f%%",
+                config.POLL_INTERVAL, config.OI_CHANGE_THRESHOLD * 100,
+                config.VOLUME_SPIKE_MULTIPLIER, config.GAINER_MIN_CHANGE_PCT)
+    logger.info("模块: 涨幅榜 | OI-价格48h | 多空比 | 挤压前兆 | 挤压检测 | 阶段判断 | 标的排序")
     logger.info("Redis: %s", config.REDIS_URL)
     logger.info("=" * 50)
 

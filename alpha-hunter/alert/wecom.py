@@ -21,6 +21,8 @@ EMOJI_MAP = {
     "空头挤压": "🔥",
     "多头挤压": "💀",
     "阶段判断": "🎯",
+    "涨幅榜异动": "🔺",
+    "挤压前兆": "⚡",
 }
 
 
@@ -70,6 +72,14 @@ def _format_alert(alert: dict) -> str:
         lines.append(f"置信度: {alert['confidence']:.0%}")
         lines.append(f"建议: {alert['suggestion']}")
         lines.append(f"4h数据: OI {alert['oi_change_4h']:+.1%} | Price {alert['price_change_4h']:+.1%}")
+    elif t == "涨幅榜异动":
+        lines.append(f"类型: {alert['sub_type']}")
+        lines.append(f"24h涨跌: {alert['price_change_pct']:+.1f}%")
+        lines.append(f"价格: {alert['price']:.6f}")
+        lines.append(f"24h成交额: ${alert['quote_volume']:,.0f}")
+    elif t == "挤压前兆":
+        lines.append(f"模式: {alert['pattern']}")
+        lines.append(f"描述: {alert['desc']}")
 
     lines.append(f"时间: {now}")
     return "\n".join(lines)
