@@ -2,16 +2,17 @@
 Alpha Hunter 配置文件
 所有阈值和参数集中管理
 """
+import os
 
 # ============================================================
-# 企业微信 Webhook
+# 企业微信 Webhook（从环境变量读取）
 # ============================================================
-WECOM_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=da34b945-4ca5-46d7-b57f-498db47058f8"
+WECOM_WEBHOOK_URL = os.environ.get("WECOM_WEBHOOK_URL", "")
 
 # ============================================================
 # Redis
 # ============================================================
-REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 REDIS_MAX_CONNECTIONS = 10
 
 # ============================================================

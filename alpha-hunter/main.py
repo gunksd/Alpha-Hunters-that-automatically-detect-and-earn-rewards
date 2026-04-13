@@ -7,6 +7,17 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+# 加载 .env
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    import os
+    for line in _env_path.read_text().strip().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
 
 import config
 from data.binance_alpha import fetch_alpha_tokens, fetch_alpha_tokens_with_mcap
