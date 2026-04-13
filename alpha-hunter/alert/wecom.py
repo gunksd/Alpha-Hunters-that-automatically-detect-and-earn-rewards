@@ -28,9 +28,23 @@ def _format_alert(alert: dict) -> str:
     now = datetime.now(CST).strftime("%H:%M")
 
     if t == "拉盘监控报告":
-        lines = [f"📋 观望列表 ({alert['count']}个) {now}"]
-        for item in alert.get("top_list", []):
-            lines.append(item)
+        lines = [f"📋 Alpha Hunter ({alert['count']}个) {now}"]
+        for item in alert.get("items", []):
+            lines.append("")
+            sym = item["symbol"]
+            sc = item["score"]
+            level = "🟢" if sc >= 70 else "🟡" if sc >= 50 else "🟠"
+            lines.append(f"{level} {sym} {sc:.0f}分 ${item['price']:.4f}")
+            lines.append(f"庄成本: {item['mm_cost']}")
+            if item["cost_per_pct"] > 0:
+                lines.append(f"每涨1%: {_fmt_money(item['cost_per_pct'])}")
+            if item["short_val"] > 0:
+                lines.append(f"空头: {_fmt_money(item['short_val'])} ({item['short_pct']:.0%})")
+            lines.append(f"预估空间: {item['pump_est']}")
+            if item.get("mm_controlled"):
+                lines.append("⚠️ MM控盘")
+            lines.append(f"24h: {item['price_chg']:+.1f}%")
+            lines.append(item["advice"])
         return "\n".join(lines)
 
     if t != "拉盘评估":

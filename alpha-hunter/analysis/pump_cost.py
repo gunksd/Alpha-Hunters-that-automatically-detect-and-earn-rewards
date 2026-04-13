@@ -579,23 +579,102 @@ async def scan_pump_candidates(symbols: list[str]) -> list[dict]:
 
 
 def _build_hourly_report(watchlist: list[dict]) -> dict | None:
-    """构建每小时的观望列表汇总"""
+    """构建每小时的观望列表汇总，每个币给出进场建议和庄家成本"""
     if not watchlist:
         return None
     watchlist.sort(key=lambda x: -x["score"])
-    lines = []
+    items = []
     for r in watchlist[:10]:
-        sl = r.get("short_liq", {})
-        short_pct = sl.get("short_ratio", 0)
-        lines.append(
-            f"{r['symbol']}: {r['score']:.0f}分 | "
-            f"空头{short_pct:.0%} | "
-            f"24h{r['price_change_24h']:+.1f}%"
-        )
+        items.append(_build_coin_brief(r))
     return {
         "type": "拉盘监控报告",
         "symbol": "汇总",
         "count": len(watchlist),
-        "top_list": lines,
+        "items": items,
         "score": 0,
+    }
+
+
+def _build_coin_brief(r: dict) -> dict:
+    """为单个币种构建进场建议、点位、庄家成本"""
+    sym = r["symbol"]
+    price = r.get("current_price", 0)
+    score = r.get("score", 0)
+    sl = r.get("short_liq", {})
+    kc = r.get("kline_cost", {})
+    conc = r.get("concentration", {})
+    lpr = r.get("liq_profit_ratio", 0)
+    oi_acc = r.get("oi_accumulation", {})
+    price_chg = r.get("price_change_24h", 0)
+
+    short_val = sl.get("short_value", 0)
+    short_pct = sl.get("short_ratio", 0)
+    cost_per_pct = kc.get("cost_per_pct", 0)
+    mm_cost = oi_acc.get("estimated_cost", 0)
+    oi_chg = oi_acc.get("oi_change_pct", 0)
+
+    # --- 庄家成本估算 ---
+    if mm_cost > 0:
+        mm_cost_str = f"${mm_cost:,.0f} (48h OI{oi_chg:+.0%})"
+    elif kc.get("pump_volume", 0) > 0:
+        est = kc["pump_volume"] * 0.15
+        mm_cost_str = f"~${est:,.0f} (按历史量15%估)"
+    else:
+        mm_cost_str = "数据不足"
+
+    # --- 预估能拉多少 ---
+    if cost_per_pct > 0 and short_val > 0:
+        liq_map = sl.get("liquidation_map", {})
+        best_target_pct = 0
+        for label, data in sorted(liq_map.items(), key=lambda x: x[1]["target_pct"]):
+            target_pct = data["target_pct"]
+            liq_val = data["cumulative_liquidation"]
+            pump_cost = cost_per_pct * (target_pct * 100)
+            if pump_cost > 0 and liq_val / pump_cost >= 0.3:
+                best_target_pct = target_pct
+        if best_target_pct > 0:
+            target_price = price * (1 + best_target_pct)
+            pump_est = f"+{best_target_pct:.0%} → ${target_price:.4f}"
+        else:
+            pump_est = "空间有限"
+    elif short_pct > 0.6:
+        pump_est = f"空头肥({short_pct:.0%})，等启动信号"
+    else:
+        pump_est = "暂无明确信号"
+
+    # --- 进场建议 ---
+    if score >= 70:
+        if price_chg < 15:
+            entry = price * 0.98
+            stop = price * 0.90
+            advice = f"🟢 可进 | 入场≤${entry:.4f} | 止损${stop:.4f}"
+        else:
+            entry = price * 0.95
+            stop = price * 0.85
+            advice = f"🟢 回调进 | 入场≤${entry:.4f} | 止损${stop:.4f}"
+    elif score >= 50:
+        if price_chg < 10:
+            entry = price * 0.97
+            stop = price * 0.88
+            advice = f"🟡 轻仓试 | 入场≤${entry:.4f} | 止损${stop:.4f}"
+        else:
+            advice = "🟡 等回调，追高风险大"
+    elif short_pct > 0.6 and price_chg < 5:
+        advice = "🟠 空头多但未启动，设价格提醒"
+    else:
+        advice = "🔴 观望"
+
+    return {
+        "symbol": sym,
+        "score": score,
+        "price": price,
+        "advice": advice,
+        "pump_est": pump_est,
+        "mm_cost": mm_cost_str,
+        "short_val": short_val,
+        "short_pct": short_pct,
+        "lpr": lpr,
+        "cost_per_pct": cost_per_pct,
+        "price_chg": price_chg,
+        "mm_controlled": conc.get("is_mm_controlled", False),
     }
