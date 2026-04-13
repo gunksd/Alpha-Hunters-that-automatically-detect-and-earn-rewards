@@ -58,76 +58,62 @@ async def refresh_watchlist():
 
 async def run_monitors():
     """运行所有异动检测，收集告警"""
-    all_alerts = []
+    # 其他模块只写日志/Redis，不推企业微信
+    # 只有拉盘评估模块的结果才推送
 
-    # 第零批：涨幅榜异动（优先级最高，只调一次 ticker）
+    # 第零批：涨幅榜异动（写日志，不推送）
     try:
-        gainer_alerts = await check_gainer_anomaly(watched_symbols)
-        all_alerts.extend(gainer_alerts)
+        await check_gainer_anomaly(watched_symbols)
     except Exception as e:
         logger.error("涨幅榜检测异常: %s", e)
 
-    # 第一批：不调 klines 的模块可以并行
-    batch1 = await asyncio.gather(
+    # 第一批：基础指标检测（写日志+Redis，不推送）
+    await asyncio.gather(
         check_oi_anomaly(watched_symbols),
         check_funding_anomaly(watched_symbols),
         check_large_liquidations(watched_symbols),
         check_long_short_anomaly(watched_symbols),
         return_exceptions=True,
     )
-    for r in batch1:
-        if isinstance(r, Exception):
-            logger.error("检测模块异常: %s", r)
-        elif isinstance(r, list):
-            all_alerts.extend(r)
 
-    # 第二批：调 klines 的模块串行执行，避免限流
+    # 第二批：K线相关（写日志，不推送）
     for check_fn in (check_volume_spike, check_price_volatility):
         try:
-            alerts = await check_fn(watched_symbols)
-            all_alerts.extend(alerts)
-        except Exception as e:
-            logger.error("检测模块异常: %s", e)
+            await check_fn(watched_symbols)
+        except Exception:
+            pass
 
-    # 第三批：依赖 Redis 历史数据的高级分析（并行）
-    batch3 = await asyncio.gather(
+    # 第三批：高级分析（写Redis，不推送）
+    await asyncio.gather(
         check_oi_price_divergence(watched_symbols),
         check_squeeze(watched_symbols),
         check_pre_squeeze(watched_symbols),
         return_exceptions=True,
     )
-    for r in batch3:
-        if isinstance(r, Exception):
-            logger.error("高级分析模块异常: %s", r)
-        elif isinstance(r, list):
-            all_alerts.extend(r)
 
-    # 第四批：庄家阶段判断（依赖前面所有数据写入 Redis）
+    # 第四批：庄家阶段判断（写Redis，不推送）
     try:
-        phase_alerts = await detect_phase(watched_symbols)
-        all_alerts.extend(phase_alerts)
-    except Exception as e:
-        logger.error("阶段判断异常: %s", e)
+        await detect_phase(watched_symbols)
+    except Exception:
+        pass
 
-    # 第五批：拉盘成本扫描（调 depth 端点，单独串行）
+    # === 唯一推送：拉盘评估 ===
+    pump_alerts = []
     if config.PUMP_SCAN_ENABLED:
         try:
             scan_symbols = watched_symbols[:config.PUMP_SCAN_TOP_N]
             pump_alerts = await scan_pump_candidates(scan_symbols)
-            all_alerts.extend(pump_alerts)
         except Exception as e:
             logger.error("拉盘扫描异常: %s", e)
 
-    return all_alerts
+    return pump_alerts
 
 
 async def on_ws_liquidation(event: dict):
-    """WebSocket 清算事件回调，只推送监控列表内的币种"""
+    """WebSocket 清算事件回调，只写日志不推送"""
     if watched_set and event.get("symbol") not in watched_set:
         return
-    event["type"] = "实时清算"
-    logger.info("实时清算 %s: %s $%.0f", event["symbol"], event["side"], event["value"])
-    await send_alert([event])
+    logger.info("实时清算 %s: %s $%.0f", event["symbol"], event["side"], event.get("value", 0))
 
 
 async def poll_loop():
