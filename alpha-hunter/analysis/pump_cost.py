@@ -492,7 +492,7 @@ async def scan_pump_candidates(symbols: list[str]) -> list[dict]:
     for symbol in symbols:
         result = await estimate_pump_cost(symbol)
         if not result:
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.5)
             continue
 
         score = result["score"]
@@ -559,7 +559,7 @@ async def scan_pump_candidates(symbols: list[str]) -> list[dict]:
                 "price_change_24h": price_chg,
             }
 
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(0.5)  # 限流保护
 
     # 每小时汇总报告
     if hourly_watchlist and now - _last_hourly_report >= HOURLY_REPORT_INTERVAL:
