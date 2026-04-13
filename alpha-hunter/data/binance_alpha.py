@@ -24,3 +24,26 @@ async def fetch_alpha_tokens() -> list[str]:
     symbols = [t["symbol"].upper() for t in tokens if t.get("symbol")]
     logger.info("获取到 %d 个 Alpha 代币", len(symbols))
     return symbols
+
+
+async def fetch_alpha_tokens_with_mcap() -> dict[str, float]:
+    """获取 Alpha 代币及其市值，返回 {SYMBOL: market_cap}"""
+    url = f"{config.BINANCE_BASE_URL}{config.ALPHA_TOKEN_LIST_PATH}"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        body = resp.json()
+
+    if not body.get("success"):
+        logger.error("Alpha API 返回失败: %s", body.get("message", "unknown"))
+        return {}
+
+    result = {}
+    for t in body.get("data", []):
+        sym = t.get("symbol", "").upper()
+        mcap = float(t.get("marketCap") or 0)
+        if sym:
+            result[sym] = mcap
+
+    logger.info("获取到 %d 个 Alpha 代币（含市值）", len(result))
+    return result

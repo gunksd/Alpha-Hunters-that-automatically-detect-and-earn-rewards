@@ -23,6 +23,8 @@ EMOJI_MAP = {
     "阶段判断": "🎯",
     "涨幅榜异动": "🔺",
     "挤压前兆": "⚡",
+    "拉盘评估": "🎰",
+    "拉盘监控报告": "📋",
 }
 
 
@@ -32,8 +34,20 @@ def _format_alert(alert: dict) -> str:
     now = datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"{emoji} {alert['type']} — {alert['symbol']}"]
 
+    # 启动信号标记
+    if alert.get("_is_launch"):
+        lines.insert(0, "🚀🚀🚀 启动信号 🚀🚀🚀")
+        if alert.get("_launch_signal"):
+            lines.append(f"触发: {alert['_launch_signal']}")
+
     t = alert["type"]
-    if t == "OI异动":
+    if t == "拉盘监控报告":
+        lines.append(f"观望列表: {alert['count']} 个币种")
+        for item in alert.get("top_list", []):
+            lines.append(f"  {item}")
+        lines.append(f"时间: {now}")
+        return "\n".join(lines)
+    elif t == "OI异动":
         lines.append(f"方向: {alert['direction']}")
         lines.append(f"OI: {alert['prev_oi']:.2f} → {alert['current_oi']:.2f} ({alert['change_rate']:+.1%})")
         if alert.get("trend_1h"):
@@ -80,6 +94,62 @@ def _format_alert(alert: dict) -> str:
     elif t == "挤压前兆":
         lines.append(f"模式: {alert['pattern']}")
         lines.append(f"描述: {alert['desc']}")
+    elif t == "拉盘评估":
+        lines.append(f"评分: {alert['score']:.0f}/100")
+        lines.append(f"建议: {alert['advice']}")
+        lines.append(f"风险: {alert['risk']}")
+        # MM控盘信号
+        conc = alert.get("concentration", {})
+        if conc.get("is_mm_controlled"):
+            lines.append(f"⚠️ MM控盘: 盘口集中度{conc['score']:.0f}/100 (1000档仅覆盖{conc['spread_pct']:.1%})")
+        # 空头清算收益
+        sl = alert.get("short_liq", {})
+        if sl.get("short_value", 0) > 0:
+            lines.append(f"空头持仓: ${sl['short_value']:,.0f} (占比{sl['short_ratio']:.0%}, 多空比{sl['long_short_ratio']:.2f})")
+            liq_map = sl.get("liquidation_map", {})
+            liq_lines = []
+            for label in ["+5%", "+10%", "+20%", "+33%"]:
+                if label in liq_map:
+                    lv = liq_map[label]["cumulative_liquidation"]
+                    if lv > 0:
+                        liq_lines.append(f"  拉到{label}: 清算${lv:,.0f}")
+            if liq_lines:
+                lines.append("空头清算预估:")
+                lines.extend(liq_lines)
+        lpr = alert.get("liq_profit_ratio", 0)
+        if lpr > 0:
+            verdict = "🟢 MM必拉" if lpr > 2 else "🟡 有动力" if lpr > 1 else "🟠 一般"
+            lines.append(f"清算收益/拉盘成本: {lpr:.1f}x → {verdict}")
+        # 拉盘成本明细
+        costs = alert.get("pump_costs", {})
+        if costs:
+            cost_lines = []
+            for label in ["+50%", "+100%", "+200%", "+300%"]:
+                if label in costs:
+                    c = costs[label]["cost"]
+                    cost_lines.append(f"  拉到{label}: ${c:,.0f}")
+            if cost_lines:
+                lines.append("拉盘成本(盘口快照):")
+                lines.extend(cost_lines)
+        # OI 建仓
+        oi = alert.get("oi_accumulation", {})
+        if oi.get("estimated_cost", 0) > 0:
+            lines.append(f"MM建仓估算: ${oi['estimated_cost']:,.0f} (48h OI {oi['oi_change_pct']:+.1%})")
+        if alert.get("estimated_multiplier", 0) > 0:
+            lines.append(f"预估拉盘空间: {alert['estimated_multiplier']:.0%}")
+        # K线反推真实成本
+        kc = alert.get("kline_cost", {})
+        if kc.get("cost_per_pct", 0) > 0:
+            lines.append(f"历史拉盘数据:")
+            lines.append(f"  最大涨幅: {kc['max_pump_pct']:.0%} ({kc['pump_hours']}h)")
+            lines.append(f"  总消耗: ${kc['pump_volume']:,.0f}")
+            lines.append(f"  每涨1%成本: ${kc['cost_per_pct']:,.0f}")
+            # 用历史成本估算继续拉的代价
+            for target in [50, 100, 200]:
+                est = kc['cost_per_pct'] * target
+                lines.append(f"  再拉{target}%需: ${est:,.0f}")
+        lines.append(f"24h涨幅: {alert['price_change_24h']:+.1f}%")
+        lines.append(f"24h成交额: ${alert['quote_volume_24h']:,.0f}")
 
     lines.append(f"时间: {now}")
     return "\n".join(lines)

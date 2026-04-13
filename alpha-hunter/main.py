@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 
 import config
-from data.binance_alpha import fetch_alpha_tokens
+from data.binance_alpha import fetch_alpha_tokens, fetch_alpha_tokens_with_mcap
 from data.binance_futures import fetch_futures_symbols
 from data.websocket import listen_liquidations
 from data.redis_store import close as close_redis
@@ -26,6 +26,7 @@ from analysis.phase_detector import detect_phase
 from analysis.gainer_monitor import check_gainer_anomaly
 from analysis.pre_squeeze import check_pre_squeeze
 from analysis.symbol_ranker import rank_symbols
+from analysis.pump_cost import scan_pump_candidates
 from alert.wecom import send_alert
 
 CST = timezone(timedelta(hours=8))
@@ -40,12 +41,12 @@ last_alpha_refresh = 0.0
 
 
 async def refresh_watchlist():
-    """刷新监控列表：Alpha ∩ 合约"""
+    """刷新监控列表：Alpha ∩ 合约 + 市值过滤"""
     global watched_symbols, watched_set, last_alpha_refresh
     logger.info("刷新监控列表...")
-    alpha_tokens = await fetch_alpha_tokens()
+    alpha_mcap = await fetch_alpha_tokens_with_mcap()
     futures_symbols = await fetch_futures_symbols()
-    watched_symbols = cross_filter(alpha_tokens, futures_symbols)
+    watched_symbols = cross_filter(alpha_mcap, futures_symbols)
     # 标的池排序：新币和大波动币优先
     watched_symbols = await rank_symbols(watched_symbols)
     watched_set = set(watched_symbols)
@@ -108,11 +109,22 @@ async def run_monitors():
     except Exception as e:
         logger.error("阶段判断异常: %s", e)
 
+    # 第五批：拉盘成本扫描（调 depth 端点，单独串行）
+    if config.PUMP_SCAN_ENABLED:
+        try:
+            scan_symbols = watched_symbols[:config.PUMP_SCAN_TOP_N]
+            pump_alerts = await scan_pump_candidates(scan_symbols)
+            all_alerts.extend(pump_alerts)
+        except Exception as e:
+            logger.error("拉盘扫描异常: %s", e)
+
     return all_alerts
 
 
 async def on_ws_liquidation(event: dict):
-    """WebSocket 清算事件回调"""
+    """WebSocket 清算事件回调，只推送监控列表内的币种"""
+    if watched_set and event.get("symbol") not in watched_set:
+        return
     event["type"] = "实时清算"
     logger.info("实时清算 %s: %s $%.0f", event["symbol"], event["side"], event["value"])
     await send_alert([event])

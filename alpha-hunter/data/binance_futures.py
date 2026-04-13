@@ -147,6 +147,23 @@ async def fetch_force_orders(symbol: str | None = None, limit: int = 20) -> list
     ]
 
 
+async def fetch_depth(symbol: str, limit: int = 500) -> dict:
+    """获取 Order Book 深度（最多1000档）"""
+    client = _get_client()
+    resp = await client.get(
+        "/fapi/v1/depth",
+        params={"symbol": symbol, "limit": limit},
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    return {
+        "symbol": symbol,
+        "bids": [(float(p), float(q)) for p, q in data.get("bids", [])],  # [(price, qty), ...]
+        "asks": [(float(p), float(q)) for p, q in data.get("asks", [])],
+        "time": data.get("T", 0),
+    }
+
+
 async def fetch_top_long_short_ratio(symbol: str, period: str = "5m", limit: int = 1) -> list[dict]:
     """获取大户多空比（账户数）"""
     client = _get_client()

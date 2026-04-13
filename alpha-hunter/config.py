@@ -6,7 +6,7 @@ Alpha Hunter 配置文件
 # ============================================================
 # 企业微信 Webhook
 # ============================================================
-WECOM_WEBHOOK_URL = ""  # 填入你的企业微信机器人 Webhook URL
+WECOM_WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=da34b945-4ca5-46d7-b57f-498db47058f8"
 
 # ============================================================
 # Redis
@@ -93,6 +93,19 @@ BINANCE_WS_URL = "wss://fstream.binance.com/ws"
 
 # Alpha Token List
 ALPHA_TOKEN_LIST_PATH = "/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
+
+# ============================================================
+# 市值过滤
+# ============================================================
+MARKET_CAP_MAX = 0               # 市值上限：0=不过滤
+MARKET_CAP_MIN = 0               # 市值下限：0=不过滤
+
+# ============================================================
+# 拉盘成本估算
+# ============================================================
+PUMP_SCAN_ENABLED = True         # 是否启用拉盘扫描
+PUMP_SCORE_THRESHOLD = 35        # 最低评分阈值（0-100）
+PUMP_SCAN_TOP_N = 50             # 每轮只扫描排名前N的币种（节省API调用）
 
 # ============================================================
 # 日志
